@@ -1,3 +1,4 @@
+import { Awaitable, isFunction } from '@sapphire/utilities';
 import type * as Lexure from 'lexure';
 
 /**
@@ -67,4 +68,30 @@ export function isOk<T, E>(x: Result<T, E>): x is Ok<T> {
  */
 export function isErr<T, E>(x: Result<T, E>): x is Err<E> {
 	return !x.success;
+}
+
+/**
+ * Creates a {@link Result} out of a callback.
+ * @typeparam T The result's type.
+ * @typeparam E The error's type.
+ */
+export function from<T, E = unknown>(cb: (...args: unknown[]) => T): Result<T, E> {
+	try {
+		return ok(cb());
+	} catch (error) {
+		return err(error as E);
+	}
+}
+
+/**
+ * Creates a {@link Result} out of a promise or async callback.
+ * @typeparam T The result's type.
+ * @typeparam E The error's type.
+ */
+export async function fromAsync<T, E = unknown>(promiseOrCb: Awaitable<T> | ((...args: unknown[]) => Awaitable<T>)): Promise<Result<T, E>> {
+	try {
+		return ok(await (isFunction(promiseOrCb) ? promiseOrCb() : promiseOrCb));
+	} catch (error) {
+		return err(error as E);
+	}
 }

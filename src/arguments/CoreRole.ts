@@ -1,36 +1,32 @@
-import { RoleMentionRegex, SnowflakeRegex } from '@sapphire/discord-utilities';
 import type { PieceContext } from '@sapphire/pieces';
-import type { Guild, Role } from 'discord.js';
+import type { Role } from 'discord.js';
 import { Identifiers } from '../lib/errors/Identifiers';
-import { Argument, ArgumentContext, AsyncArgumentResult } from '../lib/structures/Argument';
+import { resolveRole } from '../lib/resolvers';
+import { Argument } from '../lib/structures/Argument';
 
 export class CoreArgument extends Argument<Role> {
 	public constructor(context: PieceContext) {
 		super(context, { name: 'role' });
 	}
 
-	public async run(parameter: string, context: ArgumentContext): AsyncArgumentResult<Role> {
+	public async run(parameter: string, context: Argument.Context): Argument.AsyncResult<Role> {
 		const { guild } = context.message;
 		if (!guild) {
 			return this.error({
 				parameter,
 				identifier: Identifiers.ArgumentRoleMissingGuild,
-				message: 'The argument must be run on a guild.',
+				message: 'This command can only be used in a server.',
 				context
 			});
 		}
 
-		const role = (await this.resolveByID(parameter, guild)) ?? this.resolveByQuery(parameter, guild);
-		return role ? this.ok(role) : this.error({ parameter, message: 'The argument did not resolve to a role.', context });
-	}
-
-	private async resolveByID(argument: string, guild: Guild): Promise<Role | null> {
-		const roleID = RoleMentionRegex.exec(argument) ?? SnowflakeRegex.exec(argument);
-		return roleID ? guild.roles.fetch(roleID[1]).catch(() => null) : null;
-	}
-
-	private resolveByQuery(argument: string, guild: Guild): Role | null {
-		const lowerCaseArgument = argument.toLowerCase();
-		return guild.roles.cache.find((role) => role.name.toLowerCase() === lowerCaseArgument) ?? null;
+		const resolved = await resolveRole(parameter, guild);
+		if (resolved.success) return this.ok(resolved.value);
+		return this.error({
+			parameter,
+			identifier: resolved.error,
+			message: 'The given argument did not resolve to a role.',
+			context: { ...context, guild }
+		});
 	}
 }

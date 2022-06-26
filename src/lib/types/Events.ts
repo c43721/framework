@@ -2,7 +2,7 @@ import type { Piece, Store } from '@sapphire/pieces';
 import { Constants, Message } from 'discord.js';
 import type { UserError } from '../errors/UserError';
 import type { Args } from '../parsers/Args';
-import type { Command, CommandContext } from '../structures/Command';
+import type { Command } from '../structures/Command';
 import type { Listener } from '../structures/Listener';
 import type { PluginHook } from './Enums';
 
@@ -14,7 +14,6 @@ export const Events = {
 	ChannelUpdate: Constants.Events.CHANNEL_UPDATE,
 	ClientReady: Constants.Events.CLIENT_READY,
 	Debug: Constants.Events.DEBUG,
-	Disconnect: Constants.Events.DISCONNECT,
 	Error: Constants.Events.ERROR,
 	GuildBanAdd: Constants.Events.GUILD_BAN_ADD,
 	GuildBanRemove: Constants.Events.GUILD_BAN_REMOVE,
@@ -27,7 +26,6 @@ export const Events = {
 	GuildMemberAdd: Constants.Events.GUILD_MEMBER_ADD,
 	GuildMemberAvailable: Constants.Events.GUILD_MEMBER_AVAILABLE,
 	GuildMemberRemove: Constants.Events.GUILD_MEMBER_REMOVE,
-	GuildMemberSpeaking: Constants.Events.GUILD_MEMBER_SPEAKING,
 	GuildMemberUpdate: Constants.Events.GUILD_MEMBER_UPDATE,
 	GuildMembersChunk: Constants.Events.GUILD_MEMBERS_CHUNK,
 	GuildRoleCreate: Constants.Events.GUILD_ROLE_CREATE,
@@ -48,8 +46,6 @@ export const Events = {
 	PresenceUpdate: Constants.Events.PRESENCE_UPDATE,
 	RateLimit: Constants.Events.RATE_LIMIT,
 	Raw: Constants.Events.RAW,
-	Reconnecting: Constants.Events.RECONNECTING,
-	Resumed: Constants.Events.RESUMED,
 	ShardDisconnect: Constants.Events.SHARD_DISCONNECT,
 	ShardError: Constants.Events.SHARD_ERROR,
 	ShardReady: Constants.Events.SHARD_READY,
@@ -69,6 +65,7 @@ export const Events = {
 	CommandFinish: 'commandFinish' as const,
 	CommandRun: 'commandRun' as const,
 	CommandSuccess: 'commandSuccess' as const,
+	CommandTypingError: 'commandTypingError' as const,
 	ListenerError: 'listenerError' as const,
 	MentionPrefixOnly: 'mentionPrefixOnly' as const,
 	NonPrefixedMessage: 'nonPrefixedMessage' as const,
@@ -110,12 +107,12 @@ export interface PreCommandRunPayload extends CommandDeniedPayload {}
 
 export interface CommandDeniedPayload extends ICommandPayload {
 	parameters: string;
-	context: CommandContext;
+	context: Command.RunContext;
 }
 
 export interface CommandAcceptedPayload extends ICommandPayload {
 	parameters: string;
-	context: CommandContext;
+	context: Command.RunContext;
 }
 
 export interface CommandRunPayload<T extends Args = Args> extends CommandAcceptedPayload {
@@ -132,13 +129,15 @@ export interface CommandSuccessPayload<T extends Args = Args> extends CommandRun
 	result: unknown;
 }
 
+export interface CommandTypingErrorPayload<T extends Args = Args> extends CommandRunPayload<T> {}
+
 declare module 'discord.js' {
 	interface ClientEvents {
 		// #region Sapphire load cycle events
 		[Events.PieceUnload]: [store: Store<Piece>, piece: Piece];
 		[Events.PiecePostLoad]: [store: Store<Piece>, piece: Piece];
 		[Events.MentionPrefixOnly]: [message: Message];
-		[Events.ListenerError]: [error: Error, payload: ListenerErrorPayload];
+		[Events.ListenerError]: [error: unknown, payload: ListenerErrorPayload];
 		[Events.PreMessageParsed]: [message: Message];
 		[Events.PrefixedMessage]: [message: Message, prefix: string | RegExp];
 		[Events.UnknownCommandName]: [payload: UnknownCommandNamePayload];
@@ -148,8 +147,9 @@ declare module 'discord.js' {
 		[Events.CommandAccepted]: [payload: CommandAcceptedPayload];
 		[Events.CommandRun]: [message: Message, command: Command, payload: CommandRunPayload];
 		[Events.CommandSuccess]: [payload: CommandSuccessPayload];
-		[Events.CommandError]: [error: Error, payload: CommandErrorPayload];
+		[Events.CommandError]: [error: unknown, payload: CommandErrorPayload];
 		[Events.CommandFinish]: [message: Message, command: Command, payload: CommandFinishPayload];
+		[Events.CommandTypingError]: [error: unknown, payload: CommandTypingErrorPayload];
 		[Events.PluginLoaded]: [hook: PluginHook, name: string | undefined];
 		[Events.NonPrefixedMessage]: [message: Message];
 		// #endregion Sapphire load cycle events

@@ -1,42 +1,32 @@
-import { ChannelMentionRegex, SnowflakeRegex } from '@sapphire/discord-utilities';
+import type { GuildBasedChannelTypes } from '@sapphire/discord.js-utilities';
 import type { PieceContext } from '@sapphire/pieces';
-import type { Guild, GuildChannel } from 'discord.js';
 import { Identifiers } from '../lib/errors/Identifiers';
-import { Argument, ArgumentContext, ArgumentResult } from '../lib/structures/Argument';
+import { resolveGuildChannel } from '../lib/resolvers';
+import { Argument } from '../lib/structures/Argument';
 
-export class CoreArgument extends Argument<GuildChannel> {
+export class CoreArgument extends Argument<GuildBasedChannelTypes> {
 	public constructor(context: PieceContext) {
 		super(context, { name: 'guildChannel' });
 	}
 
-	public run(parameter: string, context: ArgumentContext): ArgumentResult<GuildChannel> {
+	public run(parameter: string, context: Argument.Context): Argument.Result<GuildBasedChannelTypes> {
 		const { guild } = context.message;
 		if (!guild) {
 			return this.error({
 				parameter,
-				identifier: Identifiers.ArgumentGuildChannelMissingGuild,
-				message: 'The argument must be run in a guild.',
-				context: { ...context, guild }
+				identifier: Identifiers.ArgumentGuildChannelMissingGuildError,
+				message: 'This command can only be used in a server.',
+				context
 			});
 		}
 
-		const channel = this.resolveByID(parameter, guild) ?? this.resolveByQuery(parameter, guild);
-		return channel
-			? this.ok(channel)
-			: this.error({
-					parameter,
-					message: 'The argument did not resolve to a guild channel.',
-					context: { ...context, guild }
-			  });
-	}
-
-	private resolveByID(argument: string, guild: Guild): GuildChannel | null {
-		const channelID = ChannelMentionRegex.exec(argument) ?? SnowflakeRegex.exec(argument);
-		return channelID ? guild.channels.cache.get(channelID[1]) ?? null : null;
-	}
-
-	private resolveByQuery(argument: string, guild: Guild): GuildChannel | null {
-		const lowerCaseArgument = argument.toLowerCase();
-		return guild.channels.cache.find((channel) => channel.name.toLowerCase() === lowerCaseArgument) ?? null;
+		const resolved = resolveGuildChannel(parameter, guild);
+		if (resolved.success) return this.ok(resolved.value);
+		return this.error({
+			parameter,
+			identifier: resolved.error,
+			message: 'The argument did not resolve to a valid server channel.',
+			context: { ...context, guild }
+		});
 	}
 }

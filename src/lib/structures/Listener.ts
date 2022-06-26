@@ -1,6 +1,7 @@
-import { Piece, PieceContext, PieceOptions } from '@sapphire/pieces';
+import { Piece } from '@sapphire/pieces';
 import type { Client, ClientEvents } from 'discord.js';
 import type { EventEmitter } from 'events';
+import { fromAsync, isErr } from '../parsers/Result';
 import { Events } from '../types/Events';
 
 /**
@@ -10,12 +11,12 @@ import { Events } from '../types/Events';
  * @example
  * ```typescript
  * // TypeScript:
- * import { Events, Listener, PieceContext } from '@sapphire/framework';
+ * import { Events, Listener } from '@sapphire/framework';
  *
  * // Define a class extending `Listener`, then export it.
  * // NOTE: You can use `export default` or `export =` too.
  * export class CoreListener extends Listener<typeof Events.Ready> {
- *   public constructor(context: PieceContext) {
+ *   public constructor(context: Listener.Context) {
  *     super(context, { event: Events.Ready, once: true });
  *   }
  *
@@ -42,15 +43,28 @@ import { Events } from '../types/Events';
  * }
  * ```
  */
-export abstract class Listener<E extends keyof ClientEvents | symbol = ''> extends Piece {
+export abstract class Listener<E extends keyof ClientEvents | symbol = '', O extends Listener.Options = Listener.Options> extends Piece<O> {
+	/**
+	 * The emitter, if any.
+	 * @since 2.0.0
+	 */
 	public readonly emitter: EventEmitter | null;
+
+	/**
+	 * The name of the event the listener listens to.
+	 * @since 2.0.0
+	 */
 	public readonly event: string;
+
+	/**
+	 * Whether or not the listener will be unloaded after the first run.
+	 * @since 2.0.0
+	 */
 	public readonly once: boolean;
 
-	// eslint-disable-next-line @typescript-eslint/explicit-member-accessibility
-	#listener: ((...args: any[]) => void) | null;
+	private _listener: ((...args: any[]) => void) | null;
 
-	public constructor(context: PieceContext, options: EventOptions = {}) {
+	public constructor(context: Listener.Context, options: Listener.Options = {}) {
 		super(context, options);
 
 		this.emitter =
@@ -61,42 +75,77 @@ export abstract class Listener<E extends keyof ClientEvents | symbol = ''> exten
 		this.event = options.event ?? this.name;
 		this.once = options.once ?? false;
 
-		this.#listener = this.emitter && this.event ? (this.once ? this._runOnce.bind(this) : this._run.bind(this)) : null;
+		this._listener = this.emitter && this.event ? (this.once ? this._runOnce.bind(this) : this._run.bind(this)) : null;
+
+		// If there's no emitter or no listener, disable:
+		if (this.emitter === null || this._listener === null) this.enabled = false;
 	}
 
 	public abstract run(...args: E extends keyof ClientEvents ? ClientEvents[E] : unknown[]): unknown;
 
 	public onLoad() {
-		if (this.#listener) this.emitter![this.once ? 'once' : 'on'](this.event, this.#listener);
+		if (this._listener) {
+			const emitter = this.emitter!;
+
+			// Increment the maximum amount of listeners by one:
+			const maxListeners = emitter.getMaxListeners();
+			if (maxListeners !== 0) emitter.setMaxListeners(maxListeners + 1);
+
+			emitter[this.once ? 'once' : 'on'](this.event, this._listener);
+		}
+		return super.onLoad();
 	}
 
 	public onUnload() {
-		if (!this.once && this.#listener) this.emitter!.off(this.event, this.#listener);
+		if (!this.once && this._listener) {
+			const emitter = this.emitter!;
+
+			// Increment the maximum amount of listeners by one:
+			const maxListeners = emitter.getMaxListeners();
+			if (maxListeners !== 0) emitter.setMaxListeners(maxListeners - 1);
+
+			emitter.off(this.event, this._listener);
+			this._listener = null;
+		}
+
+		return super.onUnload();
 	}
 
-	public toJSON(): Record<PropertyKey, unknown> {
+	public toJSON(): ListenerJSON {
 		return {
 			...super.toJSON(),
+			once: this.once,
 			event: this.event
 		};
 	}
 
 	private async _run(...args: unknown[]) {
-		try {
-			await this.run(...args);
-		} catch (error) {
-			this.container.client.emit(Events.ListenerError, error, { piece: this });
+		// @ts-expect-error This seems to be a TS bug, so for now ts-expect-error it
+		const result = await fromAsync(() => this.run(...args));
+		if (isErr(result)) {
+			this.container.client.emit(Events.ListenerError, result.error, { piece: this });
 		}
 	}
 
 	private async _runOnce(...args: unknown[]) {
 		await this._run(...args);
-		await this.store.unload(this);
+		await this.unload();
 	}
 }
 
-export interface EventOptions extends PieceOptions {
+export interface ListenerOptions extends Piece.Options {
 	readonly emitter?: keyof Client | EventEmitter;
 	readonly event?: string;
 	readonly once?: boolean;
+}
+
+export interface ListenerJSON extends Piece.JSON {
+	event: string;
+	once: boolean;
+}
+
+export namespace Listener {
+	export type Options = ListenerOptions;
+	export type JSON = ListenerJSON;
+	export type Context = Piece.Context;
 }

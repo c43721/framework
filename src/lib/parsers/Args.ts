@@ -1,14 +1,15 @@
+import type { ChannelTypes, GuildBasedChannelTypes } from '@sapphire/discord.js-utilities';
 import { container } from '@sapphire/pieces';
 import type {
 	CategoryChannel,
-	Channel,
 	DMChannel,
-	GuildChannel,
 	GuildMember,
 	Message,
 	NewsChannel,
 	Role,
+	StageChannel,
 	TextChannel,
+	ThreadChannel,
 	User,
 	VoiceChannel
 } from 'discord.js';
@@ -17,8 +18,8 @@ import type { URL } from 'url';
 import { ArgumentError } from '../errors/ArgumentError';
 import { Identifiers } from '../errors/Identifiers';
 import { UserError } from '../errors/UserError';
-import type { ArgumentContext, ArgumentResult, IArgument } from '../structures/Argument';
-import type { Command, CommandContext } from '../structures/Command';
+import type { Argument, IArgument } from '../structures/Argument';
+import type { Command } from '../structures/Command';
 import { isSome, maybe, Maybe } from './Maybe';
 import { Err, err, isErr, isOk, ok, Ok, Result } from './Result';
 
@@ -39,7 +40,7 @@ export class Args {
 	/**
 	 * The context of the command being run.
 	 */
-	public readonly commandContext: CommandContext;
+	public readonly commandContext: Command.RunContext;
 
 	/**
 	 * The internal Lexure parser.
@@ -53,7 +54,7 @@ export class Args {
 	 */
 	private readonly states: Lexure.ArgsState[] = [];
 
-	public constructor(message: Message, command: Command, parser: Lexure.Args, context: CommandContext) {
+	public constructor(message: Message, command: Command, parser: Lexure.Args, context: Command.RunContext) {
 		this.message = message;
 		this.command = command;
 		this.parser = parser;
@@ -358,7 +359,7 @@ export class Args {
 	 * if (isOk(firstWord)) await message.channel.send(firstWord.value.toUpperCase()); // HELLO
 	 * ```
 	 */
-	public async peekResult<T>(type: () => ArgumentResult<T>): Promise<Result<T, UserError>>;
+	public async peekResult<T>(type: () => Argument.Result<T>): Promise<Result<T, UserError>>;
 	/**
 	 * Peeks the following parameter(s) without advancing the parser's state.
 	 * Passing a function as a parameter allows for returning {@link Args.pickResult}, {@link Args.repeatResult},
@@ -397,12 +398,12 @@ export class Args {
 	 * ```
 	 */
 	public async peekResult<K extends keyof ArgType>(
-		type: (() => ArgumentResult<ArgType[K]>) | K,
+		type: (() => Argument.Result<ArgType[K]>) | K,
 		options?: ArgOptions
 	): Promise<Result<ArgType[K], UserError>>;
 
 	public async peekResult<K extends keyof ArgType>(
-		type: (() => ArgumentResult<ArgType[K]>) | K,
+		type: (() => Argument.Result<ArgType[K]>) | K,
 		options: ArgOptions = {}
 	): Promise<Result<ArgType[K], UserError>> {
 		this.save();
@@ -432,7 +433,7 @@ export class Args {
 	 * await message.channel.send(`First bigint squared: ${first**2n}`); // First bigint squared: 625
 	 * ```
 	 */
-	public async peek<T>(type: () => ArgumentResult<T>): Promise<T>;
+	public async peek<T>(type: () => Argument.Result<T>): Promise<T>;
 	/**
 	 * Similar to {@link Args.peekResult} but returns the value on success, throwing otherwise.
 	 * @param type The function, custom argument, or argument name.
@@ -471,8 +472,8 @@ export class Args {
 	 * await message.channel.send(`Hostname: ${url.hostname}`); // Hostname: discord.com
 	 * ```
 	 */
-	public async peek<K extends keyof ArgType>(type: (() => ArgumentResult<ArgType[K]>) | K, options?: ArgOptions): Promise<ArgType[K]>;
-	public async peek<K extends keyof ArgType>(type: (() => ArgumentResult<ArgType[K]>) | K, options?: ArgOptions): Promise<ArgType[K]> {
+	public async peek<K extends keyof ArgType>(type: (() => Argument.Result<ArgType[K]>) | K, options?: ArgOptions): Promise<ArgType[K]>;
+	public async peek<K extends keyof ArgType>(type: (() => Argument.Result<ArgType[K]>) | K, options?: ArgOptions): Promise<ArgType[K]> {
 		const result = await this.peekResult(type, options);
 		if (isOk(result)) return result.value;
 		throw result.error;
@@ -685,27 +686,33 @@ export class Args {
 
 export interface ArgType {
 	boolean: boolean;
-	categoryChannel: CategoryChannel;
-	channel: Channel;
+	channel: ChannelTypes;
 	date: Date;
 	dmChannel: DMChannel;
 	float: number;
-	guildChannel: GuildChannel;
+	guildCategoryChannel: CategoryChannel;
+	guildChannel: GuildBasedChannelTypes;
+	guildNewsChannel: NewsChannel;
+	guildNewsThreadChannel: ThreadChannel & { type: 'GUILD_NEWS_THREAD'; parent: NewsChannel | null };
+	guildPrivateThreadChannel: ThreadChannel & { type: 'GUILD_PRIVATE_THREAD'; parent: TextChannel | null };
+	guildPublicThreadChannel: ThreadChannel & { type: 'GUILD_PUBLIC_THREAD'; parent: TextChannel | null };
+	guildStageVoiceChannel: StageChannel;
+	guildTextChannel: TextChannel;
+	guildThreadChannel: ThreadChannel;
+	guildVoiceChannel: VoiceChannel;
 	hyperlink: URL;
 	integer: number;
 	member: GuildMember;
 	message: Message;
-	newsChannel: NewsChannel;
 	number: number;
 	role: Role;
 	string: string;
-	textChannel: TextChannel;
 	url: URL;
 	user: User;
-	voiceChannel: VoiceChannel;
+	enum: string;
 }
 
-export interface ArgOptions extends Omit<ArgumentContext, 'message' | 'command'> {}
+export interface ArgOptions extends Omit<Argument.Context, 'message' | 'command'> {}
 
 export interface RepeatArgOptions extends ArgOptions {
 	/**

@@ -1,6 +1,6 @@
-import { container, Store } from '@sapphire/pieces';
-import type { Awaited } from '@sapphire/utilities';
-import { Client, ClientOptions, Message } from 'discord.js';
+import { container, Store, StoreRegistry } from '@sapphire/pieces';
+import type { Awaitable } from '@sapphire/utilities';
+import { Client, ClientOptions, Message, Snowflake } from 'discord.js';
 import { join } from 'path';
 import type { Plugin } from './plugins/Plugin';
 import { PluginManager } from './plugins/PluginManager';
@@ -8,8 +8,7 @@ import { ArgumentStore } from './structures/ArgumentStore';
 import { CommandStore } from './structures/CommandStore';
 import { ListenerStore } from './structures/ListenerStore';
 import { PreconditionStore } from './structures/PreconditionStore';
-import { StoreRegistry } from './structures/StoreRegistry';
-import { PluginHook } from './types/Enums';
+import { BucketScope, PluginHook } from './types/Enums';
 import { Events } from './types/Events';
 import { ILogger, LogLevel } from './utils/logger/ILogger';
 import { Logger } from './utils/logger/Logger';
@@ -23,12 +22,12 @@ import { Logger } from './utils/logger/Logger';
 export type SapphirePrefix = string | readonly string[] | null;
 
 export interface SapphirePrefixHook {
-	(message: Message): Awaited<SapphirePrefix>;
+	(message: Message): Awaitable<SapphirePrefix>;
 }
 
 export interface SapphireClientOptions {
 	/**
-	 * The base user directory, if set to `null`, Sapphire will not call {@link SapphireClient.registerUserDirectories},
+	 * The base user directory, if set to `null`, Sapphire will not call {@link StoreRegistry.registerPath},
 	 * meaning that you will need to manually set each folder for each store. Please read the aforementioned method's
 	 * documentation for more information.
 	 * @since 1.0.0
@@ -61,7 +60,7 @@ export interface SapphireClientOptions {
 	 * The regex prefix, an alternative to a mention or regular prefix to allow creating natural language command messages
 	 * @since 1.0.0
 	 * @example
-	 * ```ts
+	 * ```typescript
 	 * /^(hey +)?bot[,! ]/i
 	 *
 	 * // Matches:
@@ -87,7 +86,7 @@ export interface SapphireClientOptions {
 	 * @since 1.0.0
 	 * @default this.client.user?.id ?? null
 	 */
-	id?: string;
+	id?: Snowflake;
 
 	/**
 	 * The logger options, defaults to an instance of {@link Logger} when {@link ClientLoggerOptions.instance} is not specified.
@@ -109,15 +108,31 @@ export interface SapphireClientOptions {
 	 * @default true
 	 */
 	loadDefaultErrorListeners?: boolean;
+
+	/**
+	 * Controls whether the bot will automatically appear to be typing when a command is accepted.
+	 * @default false
+	 */
+	typing?: boolean;
+
+	/**
+	 * Sets the default cooldown time for all commands.
+	 * @default "No cooldown options"
+	 */
+	defaultCooldown?: CooldownOptions;
+	/**
+	 * Controls whether the bot has mention as a prefix disabled
+	 * @default false
+	 */
+	disableMentionPrefix?: boolean;
 }
 
 /**
  * The base {@link Client} extension that makes Sapphire work. When building a Discord bot with the framework, the developer
  * must either use this class, or extend it.
  *
- * Sapphire also automatically detects the folders to scan for pieces, please read
- * {@link SapphireClient.registerUserDirectories} for reference. This method is called at the start of the
- * {@link SapphireClient.login} method.
+ * Sapphire also automatically detects the folders to scan for pieces, please read {@link StoreRegistry.registerPath}
+ * for reference. This method is called at the start of the {@link SapphireClient.login} method.
  *
  * @see {@link SapphireClientOptions} for all options available to the Sapphire Client. You can also provide all of discord.js' [ClientOptions](https://discord.js.org/#/docs/main/stable/typedef/ClientOptions)
  *
@@ -157,12 +172,12 @@ export interface SapphireClientOptions {
  * });
  * ```
  */
-export class SapphireClient extends Client {
+export class SapphireClient<Ready extends boolean = boolean> extends Client<Ready> {
 	/**
 	 * The client's ID, used for the user prefix.
 	 * @since 1.0.0
 	 */
-	public id: string | null = null;
+	public id: Snowflake | null = null;
 
 	/**
 	 * The method to be overriden by the developer.
@@ -202,12 +217,22 @@ export class SapphireClient extends Client {
 	public logger: ILogger;
 
 	/**
+	 * Whether the bot has mention as a prefix disabled
+	 * @default false
+	 * @example
+	 * ```typescript
+	 * client.disableMentionPrefix = false;
+	 * ```
+	 */
+	public disableMentionPrefix?: boolean;
+
+	/**
 	 * The registered stores.
 	 * @since 1.0.0
 	 */
 	public stores: StoreRegistry;
 
-	public constructor(options: ClientOptions = {}) {
+	public constructor(options: ClientOptions) {
 		super(options);
 
 		container.client = this;
@@ -227,6 +252,7 @@ export class SapphireClient extends Client {
 		container.stores = this.stores;
 
 		this.fetchPrefix = options.fetchPrefix ?? (() => this.options.defaultPrefix ?? null);
+		this.disableMentionPrefix = options.disableMentionPrefix;
 
 		for (const plugin of SapphireClient.plugins.values(PluginHook.PreInitialization)) {
 			plugin.hook.call(this, options);
@@ -256,7 +282,7 @@ export class SapphireClient extends Client {
 	public async login(token?: string) {
 		// Register the user directory if not null:
 		if (this.options.baseUserDirectory !== null) {
-			this.stores.registerUserDirectories(this.options.baseUserDirectory);
+			this.stores.registerPath(this.options.baseUserDirectory);
 		}
 
 		// Call pre-login plugins:
@@ -291,9 +317,17 @@ export interface ClientLoggerOptions {
 	instance?: ILogger;
 }
 
+export interface CooldownOptions {
+	scope?: BucketScope;
+	delay?: number;
+	limit?: number;
+	filteredUsers?: Snowflake[];
+	filteredCommands?: string[];
+}
+
 declare module 'discord.js' {
 	interface Client {
-		id: string | null;
+		id: Snowflake | null;
 		logger: ILogger;
 		stores: StoreRegistry;
 		fetchPrefix: SapphirePrefixHook;
@@ -307,5 +341,12 @@ declare module '@sapphire/pieces' {
 		client: SapphireClient;
 		logger: ILogger;
 		stores: StoreRegistry;
+	}
+
+	interface StoreRegistryEntries {
+		arguments: ArgumentStore;
+		commands: CommandStore;
+		listeners: ListenerStore;
+		preconditions: PreconditionStore;
 	}
 }
