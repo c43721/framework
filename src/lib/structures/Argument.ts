@@ -28,7 +28,7 @@ export interface IArgument<T> {
 	 * @param parameter The string parameter to parse.
 	 * @param context The context for the method call, contains the message, command, and other options.
 	 */
-	run(parameter: string, context: Argument.Context<T>): Argument.Result<T>;
+	run(parameter: string, context: Argument.Context<T>): T;
 }
 
 /**
@@ -88,7 +88,7 @@ export interface IArgument<T> {
  * ```
  */
 export abstract class Argument<T = unknown, O extends Argument.Options = Argument.Options> extends AliasPiece<O> implements IArgument<T> {
-	public abstract run(parameter: string, context: Argument.Context<T>): Argument.Result<T>;
+	public abstract run(parameter: string, context: Argument.Context<T>): T;
 
 	/**
 	 * Wraps a value into a successful value.
