@@ -7,9 +7,13 @@ export class CoreArgument extends Argument<boolean> {
 		super(context, { name: 'boolean' });
 	}
 
-	public run(parameter: string, context: { readonly truths?: string[]; falses?: readonly string[] } & Argument.Context): boolean {
-		const resolved = resolveBoolean(parameter, { truths: context.truths, falses: context.falses });
-		if (resolved.isErr()) throw resolved.unwrapErr();
-		return resolved.unwrap();
+	public run(parameter: string, context: { readonly truths?: string[]; falses?: readonly string[] } & Argument.Context): Argument.Result<boolean> {
+		return resolveBoolean(parameter, { truths: context.truths, falses: context.falses }).mapErr((error) => ({
+			name: 'UserError',
+			identifier: error,
+			message: 'The argument did not resolve to a boolean.',
+			parameter,
+			context
+		}));
 	}
 }
